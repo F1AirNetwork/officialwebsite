@@ -51,13 +51,13 @@ const isPurchased = (product, user) => {
   if (product.type === "subscription") {
     return (
       user.subscription?.status === "active" &&
-      (user.subscription?.product === product._id ||
+      (String(user.subscription?.product) === String(product._id) ||
        user.subscription?.productName === product.name)
     );
   }
   if (product.type === "screen") {
     return (user.screenPurchases || []).some(
-      (s) => s.product === product._id || s.productName === product.name
+      (s) => String(s.product) === String(product._id) || s.productName === product.name
     );
   }
   return false;

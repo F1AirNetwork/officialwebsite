@@ -179,7 +179,9 @@ export const createRazorpayOrder = async (req, res) => {
         status:      "paid",
         paidAt:      new Date(),
       });
-      await applyProductEffect(order, product, user);
+      // Re-fetch as full Mongoose doc so applyProductEffect can call .save()
+      const fullUser = await User.findById(user._id);
+      await applyProductEffect(order, product, fullUser);
       return sendCreated(res, {
         orderId:     order._id,
         free:        true,
