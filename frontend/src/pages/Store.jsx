@@ -32,10 +32,17 @@ const resolveImage = (product) => {
 const CURRENCY_SYMBOLS = { INR: "₹", USD: "$", EUR: "€" };
 
 const getDisplayPrice = (product, currency) => {
+  // Free product — always show ₹0 / $0 / €0 in user's currency
+  if ((product.price ?? 0) === 0) {
+    const sym = currency === "INR" ? "₹" : currency === "EUR" ? "€" : "$";
+    return { symbol: sym, amount: 0 };
+  }
   if (currency === "INR" && product.priceINR != null) return { symbol: "₹", amount: product.priceINR };
   if (currency === "EUR" && product.priceEUR != null) return { symbol: "€", amount: product.priceEUR };
   if (product.priceUSD != null) return { symbol: "$", amount: product.priceUSD };
-  return { symbol: "$", amount: product.price ?? 0 };
+  if (product.price    != null) return { symbol: "$", amount: product.price };
+  // No price set for region — flag it
+  return { symbol: null, amount: null };
 };
 
 // Check if user already owns this product
@@ -111,6 +118,15 @@ const Store = () => {
 
     try {
       const currency = user.currency || "INR";
+
+      // ── Free product — skip payment gateway entirely ─────────────────────
+      if ((product.price ?? 0) === 0) {
+        await orderApi.createOrder({ productId: product._id, free: true }, token);
+        if (refreshUser) await refreshUser();
+        showToast("success", `🎉 ${product.name} has been activated on your account!`);
+        setPayingId(null);
+        return;
+      }
 
       // ── LemonSqueezy for international (USD / EUR) ──────────────────────
       if (currency === "USD" || currency === "EUR") {
@@ -301,12 +317,18 @@ const Store = () => {
                           {product.description}
                         </p>
                       )}
-                      <p className="mb-6 text-lg font-semibold text-white">
-                        {priceInfo.symbol}{priceInfo.amount}
-                        {product.billingCycle && product.billingCycle !== "one_time"
-                          ? <span className="text-sm font-normal text-white/40">/{product.billingCycle}</span>
-                          : null}
-                      </p>
+                      {priceInfo.symbol === null ? (
+                        <p className="px-3 py-2 mb-6 text-xs border rounded text-red-400/80 border-red-500/20 bg-red-500/5">
+                          This product has no price set for your region.
+                        </p>
+                      ) : (
+                        <p className="mb-6 text-lg font-semibold text-white">
+                          {priceInfo.symbol}{priceInfo.amount}
+                          {product.billingCycle && product.billingCycle !== "one_time"
+                            ? <span className="text-sm font-normal text-white/40">/{product.billingCycle}</span>
+                            : null}
+                        </p>
+                      )}
 
                       {owned ? (
                         <div className="mt-auto flex items-center justify-center gap-2 border border-green-500/30 bg-green-500/10 text-green-400 px-6 py-2.5 rounded text-xs uppercase tracking-widest mx-auto">
@@ -318,7 +340,7 @@ const Store = () => {
                       ) : (
                         <button
                           onClick={() => handleBuy(product)}
-                          disabled={!!payingId}
+                          disabled={!!payingId || priceInfo.symbol === null}
                           className="mt-auto border border-white/30 px-6 py-2.5 uppercase text-xs tracking-widest
                                      hover:bg-white  hover:border-white transition
                                      disabled:opacity-50 disabled:cursor-not-allowed

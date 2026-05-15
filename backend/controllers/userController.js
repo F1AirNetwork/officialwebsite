@@ -156,7 +156,7 @@ export const getAllUsers = async (req, res) => {
       delete filter.$or;
     }
 
-    const [users, total] = await Promise.all([
+    const [rawUsers, total] = await Promise.all([
       User.find(filter)
         .select("-password -refreshToken")
         .sort({ createdAt: -1 })
@@ -164,6 +164,26 @@ export const getAllUsers = async (req, res) => {
         .limit(parseInt(limit)),
       User.countDocuments(filter),
     ]);
+
+    // Attach paid orders to each user for the subscription dropdown
+    const userIds = rawUsers.map((u) => u._id);
+    const paidOrders = await Order.find({
+      user:   { $in: userIds },
+      status: "paid",
+    }).select("user productName amount createdAt status _id");
+
+    // Group by userId
+    const ordersByUser = {};
+    paidOrders.forEach((o) => {
+      const uid = o.user.toString();
+      if (!ordersByUser[uid]) ordersByUser[uid] = [];
+      ordersByUser[uid].push(o);
+    });
+
+    const users = rawUsers.map((u) => ({
+      ...u.toJSON(),
+      activePurchases: ordersByUser[u._id.toString()] || [],
+    }));
 
     return sendSuccess(res, {
       users,
@@ -297,24 +317,75 @@ export const banUser = async (req, res) => {
 };
 
 // ─── DELETE /api/users/admin/:id/subscription ─
-// Admin removes a user's active subscription immediately
+// Admin removes ALL active subscriptions/purchases for a user immediately.
+// Cancels both the user.subscription field AND all paid Order records,
+// so the product gate in joinStreamHandler will also block them.
 export const adminRemoveSubscription = async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) return sendNotFound(res, "User not found.");
 
-    if (!user.subscription || user.subscription.status !== "active") {
-      return sendBadRequest(res, "User has no active subscription.");
+    // ── Cancel user.subscription field if active ──
+    let productName = null;
+    if (user.subscription?.status === "active") {
+      productName = user.subscription.productName;
+      user.subscription.status = "cancelled";
     }
 
-    const productName = user.subscription.productName;
-    user.subscription.status = "cancelled";
+    // ── Cancel all paid Order records for this user ──
+    // This ensures the product gate (Order.exists check) also blocks them.
+    const cancelResult = await Order.updateMany(
+      { user: user._id, status: "paid" },
+      { status: "cancelled" }
+    );
+
     await user.save({ validateBeforeSave: false });
 
-    return sendSuccess(res, null, `Subscription "${productName}" removed from user.`);
+    return sendSuccess(res, null,
+      `Removed ${cancelResult.modifiedCount} active purchase(s) from user${productName ? ` ("${productName}")` : ""}.`
+    );
   } catch (err) {
     console.error("adminRemoveSubscription error:", err);
     return sendError(res, "Failed to remove subscription.");
+  }
+};
+
+// ─── DELETE /api/users/admin/:id/subscription/:orderId ─
+// Admin cancels one specific paid order for a user
+export const adminRemoveSingleSubscription = async (req, res) => {
+  try {
+    const { id, orderId } = req.params;
+
+    const order = await Order.findOne({ _id: orderId, user: id });
+    if (!order)          return sendNotFound(res, "Order not found for this user.");
+    if (order.status !== "paid") return sendBadRequest(res, "Order is not currently active (paid).");
+
+    order.status = "cancelled";
+    await order.save();
+
+    // If this product matches the user's subscription field, cancel that too
+    const user = await User.findById(id);
+    if (
+      user?.subscription?.status === "active" &&
+      user.subscription.productName === order.productName
+    ) {
+      // Only cancel if no other paid order exists for the same product
+      const otherPaid = await Order.exists({
+        user:        id,
+        productName: order.productName,
+        status:      "paid",
+        _id:         { $ne: order._id },
+      });
+      if (!otherPaid) {
+        user.subscription.status = "cancelled";
+        await user.save({ validateBeforeSave: false });
+      }
+    }
+
+    return sendSuccess(res, null, `Purchase "${order.productName}" cancelled successfully.`);
+  } catch (err) {
+    console.error("adminRemoveSingleSubscription error:", err);
+    return sendError(res, "Failed to cancel purchase.");
   }
 };
 

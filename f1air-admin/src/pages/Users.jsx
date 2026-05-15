@@ -26,11 +26,9 @@ const ActionBtn = ({ onClick, icon: Icon, label, danger, muted }) => (
 );
 
 // ─── Subscription dropdown cell ───────────────
-const SubCell = ({ user, onRemove }) => {
+const SubCell = ({ user, onRemoveSingle, onRemoveAll }) => {
   const [open, setOpen] = useState(false);
 
-  // Collect all active subscriptions from orders (paid) if available,
-  // fallback to single subscription field
   const activeSubs = user.activePurchases?.filter((o) => o.status === "paid") || [];
   const hasSub     = user.subscription?.status === "active";
 
@@ -38,7 +36,6 @@ const SubCell = ({ user, onRemove }) => {
     return <span className="text-xs text-zinc-600">None</span>;
   }
 
-  // Use activePurchases if available, otherwise fall back to single sub
   const items = activeSubs.length > 0
     ? activeSubs
     : [{ productName: user.subscription?.productName, _id: "legacy" }];
@@ -55,11 +52,19 @@ const SubCell = ({ user, onRemove }) => {
       </button>
 
       {open && (
-        <div className="absolute left-0 z-20 mt-1 overflow-hidden border shadow-2xl w-52 bg-zinc-900 border-zinc-700 rounded-xl">
-          <div className="px-3 py-2 border-b border-zinc-800">
+        <div className="absolute left-0 z-20 w-56 mt-1 overflow-hidden border shadow-2xl bg-zinc-900 border-zinc-700 rounded-xl">
+          <div className="flex items-center justify-between px-3 py-2 border-b border-zinc-800">
             <p className="text-[10px] font-semibold tracking-widest uppercase text-zinc-500">
               {items.length} active purchase{items.length !== 1 ? "s" : ""}
             </p>
+            {items.length > 1 && onRemoveAll && (
+              <button
+                onClick={() => { setOpen(false); onRemoveAll(user); }}
+                className="text-[10px] text-red-400 hover:text-red-300 font-semibold"
+              >
+                Remove all
+              </button>
+            )}
           </div>
           <div className="py-1 overflow-y-auto max-h-48">
             {items.map((item, i) => (
@@ -68,16 +73,24 @@ const SubCell = ({ user, onRemove }) => {
                   <p className="text-xs font-medium text-white truncate">
                     {item.productName || item.name || "—"}
                   </p>
-                  {item.status && (
-                    <p className="text-[10px] text-zinc-500 capitalize">{item.status}</p>
-                  )}
+                  <p className="text-[10px] text-zinc-500 font-mono">
+                    #{(item._id || "").toString().slice(-6).toUpperCase()}
+                  </p>
                 </div>
-                {onRemove && (
+                {onRemoveSingle && item._id !== "legacy" && (
                   <button
-                    onClick={() => { setOpen(false); onRemove(user, item); }}
-                    className="ml-2 text-[10px] text-red-400 hover:text-red-300 shrink-0"
+                    onClick={() => { setOpen(false); onRemoveSingle(user, item); }}
+                    className="ml-2 text-[10px] text-red-400 hover:text-red-300 shrink-0 font-semibold"
                   >
-                    Remove
+                    Cancel
+                  </button>
+                )}
+                {item._id === "legacy" && onRemoveAll && (
+                  <button
+                    onClick={() => { setOpen(false); onRemoveAll(user); }}
+                    className="ml-2 text-[10px] text-red-400 hover:text-red-300 shrink-0 font-semibold"
+                  >
+                    Cancel
                   </button>
                 )}
               </div>
@@ -178,15 +191,26 @@ export default function Users() {
   };
 
   const handleRemoveSub = async (user) => {
-    if (!confirm(`Remove ${user.firstName}'s active subscription? This takes effect immediately.`)) return;
+    if (!confirm("Remove ALL active purchases for " + user.firstName + "? This takes effect immediately.")) return;
     setActioning(true);
     try {
       await userApi.removeSubscription(user._id, token);
-      flash("success", "Subscription removed.");
+      flash("success", "All purchases removed.");
       load(page, search);
       if (detailUser?._id === user._id) {
-        setDetailUser((u) => ({ ...u, subscription: { ...u.subscription, status: "cancelled" } }));
+        setDetailUser((u) => ({ ...u, subscription: { ...u.subscription, status: "cancelled" }, activePurchases: [] }));
       }
+    } catch (err) { flash("error", err.message); }
+    finally { setActioning(false); }
+  };
+
+  const handleRemoveSingleSub = async (user, order) => {
+    if (!confirm("Cancel \"" + order.productName + "\" for " + user.firstName + "? This will block their access immediately.")) return;
+    setActioning(true);
+    try {
+      await userApi.removeSingleSubscription(user._id, order._id, token);
+      flash("success", order.productName + " cancelled successfully.");
+      load(page, search);
     } catch (err) { flash("error", err.message); }
     finally { setActioning(false); }
   };
@@ -197,7 +221,8 @@ export default function Users() {
     if (products.length === 0) {
       try {
         const res = await productApi.getAll(token);
-        setProducts((res.data?.products || []).filter((p) => p.isActive));
+        const list = Array.isArray(res.data) ? res.data : (res.data?.products || []);
+        setProducts(list.filter((p) => p.isActive));
       } catch { flash("error", "Could not load products."); }
     }
   };
@@ -339,7 +364,7 @@ export default function Users() {
                   {/* ── Subscription dropdown ── */}
                   <td className="px-5 py-4">
                     <div className="flex flex-col gap-1.5">
-                      <SubCell user={u} onRemove={handleRemoveSub} />
+                      <SubCell user={u} onRemoveSingle={handleRemoveSingleSub} onRemoveAll={handleRemoveSub} />
                       <button
                         onClick={() => openCurrencyModal(u)}
                         title="Override currency"

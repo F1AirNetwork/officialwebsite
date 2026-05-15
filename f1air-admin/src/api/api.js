@@ -145,7 +145,8 @@ export const userApi = {
   getById:            (id, token)          => get(`/users/admin/${id}`, token),
   updateRole:         (id, body, token)    => patch(`/users/admin/${id}/role`, body, token),
   ban:                (id, body, token)    => patch(`/users/admin/${id}/ban`, body, token),
-  removeSubscription: (id, token)          => del(`/users/admin/${id}/subscription`, token),
+  removeSubscription:       (id, token)              => del(`/users/admin/${id}/subscription`,          token),
+  removeSingleSubscription: (id, orderId, token)    => del(`/users/admin/${id}/subscription/${orderId}`, token),
   gift:               (id, body, token)    => post(`/users/admin/${id}/gift`, body, token),
   updateCurrency:     (id, body, token)    => patch(`/users/admin/${id}/currency`, body, token),
 };
