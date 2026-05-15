@@ -167,26 +167,6 @@ export const createRazorpayOrder = async (req, res) => {
     const currency = user.currency || "INR";
     const price    = resolvePrice(product, currency);
 
-    // ── Free product — skip Razorpay entirely ────────────────────────────
-    if (price === 0 || product.price === 0) {
-      const order = await Order.create({
-        user:        user._id,
-        product:     product._id,
-        productName: product.name,
-        amount:      0,
-        currency,
-        gateway:     "razorpay",
-        status:      "paid",
-        paidAt:      new Date(),
-      });
-      await applyProductEffect(order, product, user);
-      return sendCreated(res, {
-        orderId:     order._id,
-        free:        true,
-        productName: product.name,
-      }, `${product.name} activated successfully.`);
-    }
-
     if (!price || price <= 0)
       return sendBadRequest(res, "This product has no price set for your region.");
 
