@@ -85,6 +85,7 @@ const Store = () => {
   const { user, token, setUser, refreshUser } = useAuth();
 
   const [products, setProducts]             = useState([]);
+  const [paidOrders, setPaidOrders]         = useState([]);
   const [categories, setCategories]         = useState(["All"]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [loading, setLoading]               = useState(true);
