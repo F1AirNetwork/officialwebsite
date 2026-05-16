@@ -205,8 +205,11 @@ export default function Users() {
   };
 
   const handleRemoveSingleSub = async (user, order) => {
-    const orderId = String(order._id || order.id || "");
-    if (!orderId) return flash("error", "Cannot identify this purchase. Try refreshing.");
+    // order._id may be a MongoDB ObjectId object — extract the hex string
+    const rawId = order._id || order.id;
+    const orderId = rawId?.$oid || (typeof rawId === "object" ? rawId?.toString() : String(rawId || ""));
+    console.log("[removeSingleSub] orderId:", orderId, "order:", order);
+    if (!orderId || orderId === "undefined") return flash("error", "Cannot identify this purchase. Try refreshing.");
     if (!confirm("Cancel \"" + order.productName + "\" for " + user.firstName + "? This will block their access immediately.")) return;
     setActioning(true);
     try {

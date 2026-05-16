@@ -47,8 +47,10 @@ const getDisplayPrice = (product, currency) => {
 
 // Check if user already owns this product
 const isPurchased = (product, user, paidOrders = []) => {
-  // Only show PURCHASED/ACTIVE state for subscription-type products
-  if (!user || product.type !== "subscription") return false;
+  // Only show PURCHASED/ACTIVE state for products whose category is "Subscription"
+  // (case-insensitive). Type field is unreliable — category is set explicitly by admin.
+  const isSubCategory = product.category?.toLowerCase() === "subscription";
+  if (!user || !isSubCategory) return false;
   // Check paid orders first
   if (paidOrders.some((o) => o.productName === product.name || String(o.product) === String(product._id))) {
     return true;
@@ -301,7 +303,7 @@ const Store = () => {
                           <span className="font-f1 uppercase tracking-[0.2em] text-green-400 text-sm font-bold drop-shadow-lg">
                             Purchased
                           </span>
-                          {user?.subscription?.renewalDate && product.type === "subscription" && (
+                          {user?.subscription?.renewalDate && product.category?.toLowerCase() === "subscription" && (
                             <span className="text-white/50 text-[10px] tracking-wider">
                               Renews {new Date(user.subscription.renewalDate).toLocaleDateString()}
                             </span>
