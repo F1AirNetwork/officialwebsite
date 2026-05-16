@@ -91,16 +91,28 @@ const Store = () => {
   const currency = user?.currency || "INR";
 
   useEffect(() => {
-    productApi.getAll()
-      .then((res) => {
-        const all = res.data?.products || [];
+    const loadAll = async () => {
+      try {
+        const [prodRes, ordRes] = await Promise.all([
+          productApi.getAll(),
+          token ? orderApi.getMyOrders(token) : Promise.resolve(null),
+        ]);
+        const all = prodRes.data?.products || [];
         setProducts(all);
         const cats = ["All", ...new Set(all.map((p) => p.category).filter(Boolean))];
         setCategories(cats);
-      })
-      .catch(() => setError("Failed to load products."))
-      .finally(() => setLoading(false));
-  }, []);
+        if (ordRes) {
+          const orders = Array.isArray(ordRes.data) ? ordRes.data : (ordRes.data?.orders || []);
+          setPaidOrders(orders.filter((o) => o.status === "paid"));
+        }
+      } catch {
+        setError("Failed to load products.");
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadAll();
+  }, [token]);
 
   const showToast = (type, msg) => {
     setToast({ type, msg });
