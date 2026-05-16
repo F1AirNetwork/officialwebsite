@@ -47,25 +47,18 @@ const getDisplayPrice = (product, currency) => {
 
 // Check if user already owns this product
 const isPurchased = (product, user, paidOrders = []) => {
-  if (!user) return false;
-  // Check paid orders first (most reliable — covers all purchases)
+  // Only show PURCHASED/ACTIVE state for subscription-type products
+  if (!user || product.type !== "subscription") return false;
+  // Check paid orders first
   if (paidOrders.some((o) => o.productName === product.name || String(o.product) === String(product._id))) {
     return true;
   }
   // Fallback: check user.subscription field
-  if (product.type === "subscription") {
-    return (
-      user.subscription?.status === "active" &&
-      (String(user.subscription?.product) === String(product._id) ||
-       user.subscription?.productName === product.name)
-    );
-  }
-  if (product.type === "screen") {
-    return (user.screenPurchases || []).some(
-      (s) => String(s.product) === String(product._id) || s.productName === product.name
-    );
-  }
-  return false;
+  return (
+    user.subscription?.status === "active" &&
+    (String(user.subscription?.product) === String(product._id) ||
+     user.subscription?.productName === product.name)
+  );
 };
 
 // ─── Load Razorpay script once ─────────────────
