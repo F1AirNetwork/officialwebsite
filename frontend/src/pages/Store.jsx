@@ -46,8 +46,13 @@ const getDisplayPrice = (product, currency) => {
 };
 
 // Check if user already owns this product
-const isPurchased = (product, user) => {
+const isPurchased = (product, user, paidOrders = []) => {
   if (!user) return false;
+  // Check paid orders first (most reliable — covers all purchases)
+  if (paidOrders.some((o) => o.productName === product.name || String(o.product) === String(product._id))) {
+    return true;
+  }
+  // Fallback: check user.subscription field
   if (product.type === "subscription") {
     return (
       user.subscription?.status === "active" &&
@@ -121,8 +126,14 @@ const Store = () => {
 
       // ── Free product — skip payment gateway entirely ─────────────────────
       if ((product.price ?? 0) === 0) {
-        await orderApi.createOrder({ productId: product._id, free: true }, token);
+        const freeRes = await orderApi.createOrder({ productId: product._id, free: true }, token);
         if (refreshUser) await refreshUser();
+        // Refresh paid orders so isPurchased updates immediately
+        const ordRes = await orderApi.getMyOrders(token).catch(() => null);
+        if (ordRes) {
+          const orders = Array.isArray(ordRes.data) ? ordRes.data : (ordRes.data?.orders || []);
+          setPaidOrders(orders.filter((o) => o.status === "paid"));
+        }
         showToast("success", `🎉 ${product.name} has been activated on your account!`);
         setPayingId(null);
         return;
@@ -267,7 +278,7 @@ const Store = () => {
                 const img          = resolveImage(product);
                 const priceInfo    = getDisplayPrice(product, currency);
                 const isThisPaying = payingId === product._id;
-                const owned        = isPurchased(product, user);
+                const owned        = isPurchased(product, user, paidOrders);
 
                 return (
                   <div key={product._id}

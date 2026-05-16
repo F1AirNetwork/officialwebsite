@@ -205,10 +205,12 @@ export default function Users() {
   };
 
   const handleRemoveSingleSub = async (user, order) => {
+    const orderId = String(order._id || order.id || "");
+    if (!orderId) return flash("error", "Cannot identify this purchase. Try refreshing.");
     if (!confirm("Cancel \"" + order.productName + "\" for " + user.firstName + "? This will block their access immediately.")) return;
     setActioning(true);
     try {
-      await userApi.removeSingleSubscription(user._id, order._id, token);
+      await userApi.removeSingleSubscription(user._id, orderId, token);
       flash("success", order.productName + " cancelled successfully.");
       load(page, search);
     } catch (err) { flash("error", err.message); }

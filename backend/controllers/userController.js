@@ -170,7 +170,7 @@ export const getAllUsers = async (req, res) => {
     const paidOrders = await Order.find({
       user:   { $in: userIds },
       status: "paid",
-    }).select("user productName amount createdAt status _id");
+    }).select("user product productName amount createdAt status _id");
 
     // Group by userId
     const ordersByUser = {};
