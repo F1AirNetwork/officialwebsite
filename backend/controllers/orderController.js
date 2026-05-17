@@ -126,22 +126,15 @@ const applyProductEffect = async (order, product, user) => {
     else if (product.billingCycle === "month") renewalDate.setMonth(renewalDate.getMonth() + 1);
     else                                       renewalDate.setMonth(renewalDate.getMonth() + 1);
 
-    // Only set user.subscription if none is active yet.
-    // This field is kept for backward compat with screen limit logic (totalScreens virtual).
-    // For multi-subscription support, purchasedProducts is the real source of truth.
-    const hasActiveSub = user.subscription?.status === "active";
-    if (!hasActiveSub) {
-      user.subscription = {
-        product:     product._id,
-        productName: product.name,
-        price:       order.amount,
-        status:      "active",
-        startDate:   new Date(),
-        renewalDate,
-      };
-      await user.save({ validateBeforeSave: false });
-    }
-    // If already has an active sub, do NOT overwrite — just record in purchasedProducts below
+    user.subscription = {
+      product:     product._id,
+      productName: product.name,
+      price:       order.amount,
+      status:      "active",
+      startDate:   new Date(),
+      renewalDate,
+    };
+    await user.save({ validateBeforeSave: false });
   }
 
   if (product.type === "screen") {
