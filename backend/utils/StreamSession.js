@@ -2,9 +2,14 @@ import crypto from "crypto";
 import StreamSession from "../models/streamSession.js";
 
 // ─── Get screen limit for a user ─────────────
-// 1 base screen (with active subscription) + purchasedScreens
+// 1 base screen if user has ANY active subscription purchase + extra screens
 export const getScreenLimit = (user) => {
-  const hasActiveSub = user?.subscription?.status === "active";
+  // Check purchasedProducts array first (multi-subscription support)
+  const hasActiveSubInPurchases = (user?.purchasedProducts || []).some(
+    (p) => p.status === "active"
+  );
+  // Fallback to legacy subscription field
+  const hasActiveSub = hasActiveSubInPurchases || user?.subscription?.status === "active";
   const base = hasActiveSub ? 1 : 0;
   const purchased = user?.purchasedScreens || 0;
   return base + purchased;
