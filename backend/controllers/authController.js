@@ -21,18 +21,19 @@ import {
 
 // ─── Helper: sanitize user for response ──────
 const sanitizeUser = (user) => ({
-  _id:             user._id,
-  firstName:       user.firstName,
-  lastName:        user.lastName,
-  email:           user.email,
-  avatar:          user.avatar,
-  role:            user.role,
-  isVerified:      user.isVerified,
-  subscription:    user.subscription,
-  screenPurchases: user.screenPurchases,
-  country:         user.country,
-  currency:        user.currency || "USD",
-  createdAt:       user.createdAt,
+  _id:               user._id,
+  firstName:         user.firstName,
+  lastName:          user.lastName,
+  email:             user.email,
+  avatar:            user.avatar,
+  role:              user.role,
+  isVerified:        user.isVerified,
+  subscription:      user.subscription,
+  screenPurchases:   user.screenPurchases,
+  purchasedProducts: user.purchasedProducts || [],
+  country:           user.country,
+  currency:          user.currency || "USD",
+  createdAt:         user.createdAt,
 });
 
 // ─── Helper: issue both tokens ────────────────

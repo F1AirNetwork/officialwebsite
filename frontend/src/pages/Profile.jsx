@@ -13,8 +13,13 @@ const Profile = () => {
 
   const handleLogout = async () => { await logout(); navigate("/"); };
 
-  // Read directly from user.purchasedProducts — no extra fetch needed
-  const activePurchases   = (user?.purchasedProducts || []).filter((p) => p.status === "active");
+  // Read from purchasedProducts array; fall back to subscription field for legacy users
+  const rawActive = (user?.purchasedProducts || []).filter((p) => p.status === "active");
+  // Legacy fallback: if purchasedProducts is empty but subscription is active, show it
+  const legacySub = rawActive.length === 0 && user?.subscription?.status === "active"
+    ? [{ _id: "legacy", productName: user.subscription.productName, purchasedAt: user.subscription.startDate, orderId: null, status: "active" }]
+    : [];
+  const activePurchases    = [...rawActive, ...legacySub];
   const cancelledPurchases = (user?.purchasedProducts || []).filter((p) => p.status !== "active");
   const initials          = user ? `${user.firstName?.[0] ?? ""}${user.lastName?.[0] ?? ""}`.toUpperCase() : "";
   const hasActiveSub      = user?.subscription?.status === "active";
