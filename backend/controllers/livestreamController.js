@@ -1,6 +1,5 @@
 import Stream from "../models/Stream.js";
 import StreamSession from "../models/streamSession.js";
-import Order from "../models/Order.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
 import {
   joinStream,
@@ -256,20 +255,16 @@ export const joinStreamHandler = async (req, res) => {
     }
 
     // ── Product gate: stream requires a specific product purchase ──
-    console.log("[JOIN] stream.requiredProductId:", stream.requiredProductId);
-    console.log("[JOIN] user._id:", req.user._id);
     if (stream.requiredProductId) {
-      const productId = stream.requiredProductId._id ?? stream.requiredProductId;
-      console.log("[JOIN] productId to check:", productId);
-      const hasPurchased = await Order.exists({
-        user:    req.user._id,
-        product: productId,
-        status:  "paid",
-      });
-      console.log("[JOIN] hasPurchased:", hasPurchased);
+      const productId = (stream.requiredProductId._id ?? stream.requiredProductId).toString();
+
+      // Fast lookup via purchasedProducts array on User — no extra DB query
+      const fullUser   = await User.findById(req.user._id).select("purchasedProducts");
+      const hasPurchased = (fullUser?.purchasedProducts || []).some(
+        (p) => p.status === "active" && p.productId.toString() === productId
+      );
 
       if (!hasPurchased) {
-        console.log("[JOIN] BLOCKING — PRODUCT_REQUIRED");
         return res.status(403).json({
           success:          false,
           error:            `This stream requires the "${stream.requiredProductId.name}" product. Purchase it from the store to watch.`,
@@ -282,7 +277,6 @@ export const joinStreamHandler = async (req, res) => {
           upgradeRequired:  true,
         });
       }
-      console.log("[JOIN] ALLOWING — product purchased");
     } else {
       // ── Default subscription gate ──
       const hasActiveSub = req.user.subscription?.status === "active";

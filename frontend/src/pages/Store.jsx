@@ -46,19 +46,18 @@ const getDisplayPrice = (product, currency) => {
 };
 
 // Check if user already owns this product
-const isPurchased = (product, user, paidOrders = []) => {
-  // Only show PURCHASED/ACTIVE state for products whose category is "Subscription"
-  // (case-insensitive). Type field is unreliable — category is set explicitly by admin.
-  const isSubCategory = product.category?.toLowerCase() === "subscription";
-  if (!user || !isSubCategory) return false;
-  // Check paid orders first
-  if (paidOrders.some((o) => o.productName === product.name || String(o.product) === String(product._id))) {
-    return true;
-  }
-  // Fallback: check user.subscription field
+const isPurchased = (product, user) => {
+  // Only show PURCHASED/ACTIVE for subscription-category products
+  if (!user || product.category?.toLowerCase() !== "subscription") return false;
+  // Check purchasedProducts array first (fast, no extra fetch)
+  const pid = String(product._id);
+  if ((user.purchasedProducts || []).some(
+    (p) => p.status === "active" && (String(p.productId) === pid || p.productName === product.name)
+  )) return true;
+  // Fallback for users who purchased before this feature was added
   return (
     user.subscription?.status === "active" &&
-    (String(user.subscription?.product) === String(product._id) ||
+    (String(user.subscription?.product) === pid ||
      user.subscription?.productName === product.name)
   );
 };
@@ -80,7 +79,6 @@ const Store = () => {
   const { user, token, setUser, refreshUser } = useAuth();
 
   const [products, setProducts]             = useState([]);
-  const [paidOrders, setPaidOrders]         = useState([]);
   const [categories, setCategories]         = useState(["All"]);
   const [activeCategory, setActiveCategory] = useState("All");
   const [loading, setLoading]               = useState(true);
@@ -91,28 +89,16 @@ const Store = () => {
   const currency = user?.currency || "INR";
 
   useEffect(() => {
-    const loadAll = async () => {
-      try {
-        const [prodRes, ordRes] = await Promise.all([
-          productApi.getAll(),
-          token ? orderApi.getMyOrders(token) : Promise.resolve(null),
-        ]);
-        const all = prodRes.data?.products || [];
+    productApi.getAll()
+      .then((res) => {
+        const all = res.data?.products || [];
         setProducts(all);
         const cats = ["All", ...new Set(all.map((p) => p.category).filter(Boolean))];
         setCategories(cats);
-        if (ordRes) {
-          const orders = Array.isArray(ordRes.data) ? ordRes.data : (ordRes.data?.orders || []);
-          setPaidOrders(orders.filter((o) => o.status === "paid"));
-        }
-      } catch {
-        setError("Failed to load products.");
-      } finally {
-        setLoading(false);
-      }
-    };
-    loadAll();
-  }, [token]);
+      })
+      .catch(() => setError("Failed to load products."))
+      .finally(() => setLoading(false));
+  }, []);
 
   const showToast = (type, msg) => {
     setToast({ type, msg });
@@ -134,14 +120,8 @@ const Store = () => {
 
       // ── Free product — skip payment gateway entirely ─────────────────────
       if ((product.price ?? 0) === 0) {
-        const freeRes = await orderApi.createOrder({ productId: product._id, free: true }, token);
-        if (refreshUser) await refreshUser();
-        // Refresh paid orders so isPurchased updates immediately
-        const ordRes = await orderApi.getMyOrders(token).catch(() => null);
-        if (ordRes) {
-          const orders = Array.isArray(ordRes.data) ? ordRes.data : (ordRes.data?.orders || []);
-          setPaidOrders(orders.filter((o) => o.status === "paid"));
-        }
+        await orderApi.createOrder({ productId: product._id, free: true }, token);
+        if (refreshUser) await refreshUser(); // refreshUser updates user.purchasedProducts
         showToast("success", `🎉 ${product.name} has been activated on your account!`);
         setPayingId(null);
         return;
@@ -286,7 +266,7 @@ const Store = () => {
                 const img          = resolveImage(product);
                 const priceInfo    = getDisplayPrice(product, currency);
                 const isThisPaying = payingId === product._id;
-                const owned        = isPurchased(product, user, paidOrders);
+                const owned        = isPurchased(product, user);
 
                 return (
                   <div key={product._id}

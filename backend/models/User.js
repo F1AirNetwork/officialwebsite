@@ -24,18 +24,25 @@ const screenPurchaseSchema = new mongoose.Schema(
   { _id: true }
 );
 
+// ─── Purchased products array ──────────────────
+// Source of truth for "what has this user paid for".
+// Populated on every successful payment (Razorpay, LS, free, gift).
+// Used by stream product gate and Store isPurchased check.
+const purchasedProductSchema = new mongoose.Schema(
+  {
+    productId:   { type: mongoose.Schema.Types.ObjectId, ref: "Product", required: true },
+    orderId:     { type: mongoose.Schema.Types.ObjectId, ref: "Order",   required: true },
+    productName: { type: String, required: true },
+    purchasedAt: { type: Date,   default: Date.now },
+    status:      { type: String, enum: ["active", "cancelled", "refunded"], default: "active" },
+  },
+  { _id: true }
+);
+
 const userSchema = new mongoose.Schema(
   {
-    firstName: {
-      type:     String,
-      required: [true, "First name is required"],
-      trim:     true,
-    },
-    lastName: {
-      type:     String,
-      required: [true, "Last name is required"],
-      trim:     true,
-    },
+    firstName: { type: String, required: [true, "First name is required"], trim: true },
+    lastName:  { type: String, required: [true, "Last name is required"],  trim: true },
     email: {
       type:      String,
       required:  [true, "Email is required"],
@@ -44,61 +51,32 @@ const userSchema = new mongoose.Schema(
       trim:      true,
       match:     [/^\S+@\S+\.\S+$/, "Invalid email format"],
     },
-    password: {
-      type:      String,
-      minlength: [6, "Password must be at least 6 characters"],
-      select:    false,
-    },
+    password: { type: String, minlength: [6, "Password must be at least 6 characters"], select: false },
     googleId: { type: String, default: null },
     avatar:   { type: String, default: null },
 
-    role: {
-      type:    String,
-      enum:    ["user", "admin"],
-      default: "user",
-    },
+    role:       { type: String, enum: ["user", "admin"], default: "user" },
     isVerified: { type: Boolean, default: false },
 
-    // ─── Region & Currency ─────────────────────
-    // country: ISO 3166-1 alpha-2 code, e.g. "IN", "US", "DE"
-    // Set on registration from the country dropdown.
-    // Admin can override via the Users panel.
-    country: {
-      type:      String,
-      default:   "",
-      trim:      true,
-      uppercase: true,
-      maxlength: 2,
-    },
-    // currency: auto-derived from country on register; admin can override.
-    // INR → India + SE Asia, EUR → Europe, USD → everyone else.
-    currency: {
-      type:    String,
-      enum:    ["USD", "INR", "EUR"],
-      default: "USD",
-    },
+    country:  { type: String, default: "", trim: true, uppercase: true, maxlength: 2 },
+    currency: { type: String, enum: ["USD", "INR", "EUR"], default: "USD" },
 
-    // ─── Ban ──────────────────────────────────
     isBanned:  { type: Boolean, default: false },
     banReason: { type: String,  default: ""    },
     bannedAt:  { type: Date,    default: null  },
 
-    // ─── Subscription ─────────────────────────
-    subscription: {
-      type:    subscriptionSchema,
-      default: null,
-    },
+    // ─── Primary subscription (latest active sub) ──
+    subscription: { type: subscriptionSchema, default: null },
 
-    // ─── Screen purchases ──────────────────────
-    screenPurchases: {
-      type:    [screenPurchaseSchema],
-      default: [],
-    },
+    // ─── Screen purchases ──────────────────────────
+    screenPurchases: { type: [screenPurchaseSchema], default: [] },
 
-    refreshToken: {
-      type:   String,
-      select: false,
-    },
+    // ─── All purchased products ────────────────────
+    // Append-only log of every paid product. Never delete entries —
+    // set status to "cancelled" or "refunded" instead.
+    purchasedProducts: { type: [purchasedProductSchema], default: [] },
+
+    refreshToken: { type: String, select: false },
   },
   { timestamps: true, toJSON: { virtuals: true }, toObject: { virtuals: true } }
 );
@@ -116,7 +94,6 @@ userSchema.virtual("totalScreens").get(function () {
   return baseScreens + activeExtraScreens;
 });
 
-// ─── Virtual: active extra screen count ───────
 userSchema.virtual("activeExtraScreens").get(function () {
   const now = new Date();
   return (this.screenPurchases || []).filter((s) => {
@@ -126,7 +103,6 @@ userSchema.virtual("activeExtraScreens").get(function () {
   }).length;
 });
 
-// ─── Virtual: full name ───────────────────────
 userSchema.virtual("fullName").get(function () {
   return `${this.firstName} ${this.lastName}`;
 });
@@ -137,11 +113,25 @@ userSchema.methods.addScreen = async function (orderId, price, expiresAt = null)
   await this.save({ validateBeforeSave: false });
 };
 
-// ─── Instance method: expire a screen ─────────
-userSchema.methods.expireScreen = async function (screenId) {
-  const screen = this.screenPurchases.id(screenId);
-  if (screen) {
-    screen.status = "expired";
+// ─── Instance method: record a product purchase ─
+userSchema.methods.addPurchase = async function (productId, orderId, productName) {
+  // Avoid duplicate active entries for the same order
+  const exists = this.purchasedProducts.some(
+    (p) => p.orderId.toString() === orderId.toString()
+  );
+  if (!exists) {
+    this.purchasedProducts.push({ productId, orderId, productName, status: "active" });
+    await this.save({ validateBeforeSave: false });
+  }
+};
+
+// ─── Instance method: cancel a specific purchase ─
+userSchema.methods.cancelPurchase = async function (orderId) {
+  const entry = this.purchasedProducts.find(
+    (p) => p.orderId.toString() === orderId.toString()
+  );
+  if (entry) {
+    entry.status = "cancelled";
     await this.save({ validateBeforeSave: false });
   }
 };
@@ -152,7 +142,6 @@ userSchema.pre("save", async function () {
   this.password = await bcrypt.hash(this.password, 12);
 });
 
-// ─── Compare password ─────────────────────────
 userSchema.methods.comparePassword = async function (candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };

@@ -165,25 +165,15 @@ export const getAllUsers = async (req, res) => {
       User.countDocuments(filter),
     ]);
 
-    // Attach paid orders to each user for the subscription dropdown
-    const userIds = rawUsers.map((u) => u._id);
-    const paidOrders = await Order.find({
-      user:   { $in: userIds },
-      status: "paid",
-    }).select("user product productName amount createdAt status _id");
-
-    // Group by userId
-    const ordersByUser = {};
-    paidOrders.forEach((o) => {
-      const uid = o.user.toString();
-      if (!ordersByUser[uid]) ordersByUser[uid] = [];
-      ordersByUser[uid].push(o);
+    // Use purchasedProducts array from User (no extra Order query needed)
+    const users = rawUsers.map((u) => {
+      const json = u.toJSON();
+      return {
+        ...json,
+        // activePurchases for the admin dropdown — active entries from purchasedProducts
+        activePurchases: (json.purchasedProducts || []).filter((p) => p.status === "active"),
+      };
     });
-
-    const users = rawUsers.map((u) => ({
-      ...u.toJSON(),
-      activePurchases: ordersByUser[u._id.toString()] || [],
-    }));
 
     return sendSuccess(res, {
       users,
@@ -333,12 +323,13 @@ export const adminRemoveSubscription = async (req, res) => {
     }
 
     // ── Cancel all paid Order records for this user ──
-    // This ensures the product gate (Order.exists check) also blocks them.
     const cancelResult = await Order.updateMany(
       { user: user._id, status: "paid" },
       { status: "cancelled" }
     );
 
+    // ── Cancel all purchasedProducts entries ──
+    user.purchasedProducts.forEach((p) => { p.status = "cancelled"; });
     await user.save({ validateBeforeSave: false });
 
     return sendSuccess(res, null,
@@ -357,26 +348,32 @@ export const adminRemoveSingleSubscription = async (req, res) => {
     const { id, orderId } = req.params;
 
     const order = await Order.findOne({ _id: orderId, user: id });
-    if (!order)          return sendNotFound(res, "Order not found for this user.");
-    if (order.status !== "paid") return sendBadRequest(res, "Order is not currently active (paid).");
+    if (!order)                  return sendNotFound(res, "Order not found for this user.");
+    if (order.status !== "paid") return sendBadRequest(res, "Order is not currently active.");
 
+    // Cancel the order
     order.status = "cancelled";
     await order.save();
 
-    // If this product matches the user's subscription field, cancel that too
     const user = await User.findById(id);
+    if (!user) return sendNotFound(res, "User not found.");
+
+    // Cancel the purchasedProducts entry for this order
+    await user.cancelPurchase(orderId);
+
+    // If this product matches the user.subscription field, check if any
+    // other active purchase exists for the same product before cancelling
     if (
-      user?.subscription?.status === "active" &&
+      user.subscription?.status === "active" &&
       user.subscription.productName === order.productName
     ) {
-      // Only cancel if no other paid order exists for the same product
-      const otherPaid = await Order.exists({
-        user:        id,
-        productName: order.productName,
-        status:      "paid",
-        _id:         { $ne: order._id },
-      });
-      if (!otherPaid) {
+      const stillHasActive = user.purchasedProducts.some(
+        (p) =>
+          p.productName === order.productName &&
+          p.status === "active" &&
+          p.orderId.toString() !== orderId
+      );
+      if (!stillHasActive) {
         user.subscription.status = "cancelled";
         await user.save({ validateBeforeSave: false });
       }
@@ -457,6 +454,9 @@ export const giftProduct = async (req, res) => {
       // No automated effect — just the order record as proof
       // (Extend this block for digital delivery, etc.)
     }
+
+    // Record in purchasedProducts array
+    await user.addPurchase(product._id, order._id, product.name);
 
     return sendCreated(res, {
       order,

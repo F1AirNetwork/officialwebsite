@@ -117,6 +117,8 @@ const toPaise = (amount, currency) => {
 };
 
 // ─── Grant product to user after payment ──────
+// Called from ALL payment success paths:
+// Razorpay verify, Razorpay webhook, LS verify, LS webhook, free order, admin manual paid
 const applyProductEffect = async (order, product, user) => {
   if (product.type === "subscription") {
     const renewalDate = new Date();
@@ -149,6 +151,10 @@ const applyProductEffect = async (order, product, user) => {
     }
     await user.save({ validateBeforeSave: false });
   }
+
+  // ── Always record in purchasedProducts array ──
+  // This is the fast lookup used by stream gate and Store isPurchased.
+  await user.addPurchase(product._id, order._id, product.name);
 };
 
 // ════════════════════════════════════════════════
