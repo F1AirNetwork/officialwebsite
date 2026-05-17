@@ -1,5 +1,6 @@
 import Stream from "../models/Stream.js";
 import StreamSession from "../models/streamSession.js";
+import User from "../models/User.js";
 import { uploadToCloudinary, deleteFromCloudinary } from "../utils/cloudinary.js";
 import {
   joinStream,

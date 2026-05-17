@@ -29,7 +29,7 @@ const ActionBtn = ({ onClick, icon: Icon, label, danger, muted }) => (
 const SubCell = ({ user, onRemoveSingle, onRemoveAll }) => {
   const [open, setOpen] = useState(false);
 
-  const activeSubs = user.activePurchases?.filter((o) => o.status === "paid") || [];
+  const activeSubs = user.activePurchases?.filter((o) => o.status === "active") || [];
   const hasSub     = user.subscription?.status === "active";
 
   if (!hasSub && activeSubs.length === 0) {
