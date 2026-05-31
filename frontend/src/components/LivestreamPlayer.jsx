@@ -18,6 +18,7 @@ const LivestreamPlayer = () => {
   const [errorCode, setErrorCode]       = useState(""); // NO_SUBSCRIPTION | SCREEN_LIMIT_REACHED | PRODUCT_REQUIRED
   const [requiredProduct, setRequiredProduct] = useState(null); // { _id, name, slug }
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [showControls, setShowControls] = useState(true);
 
   const videoRef            = useRef(null);
   const hlsRef              = useRef(null);
@@ -25,6 +26,7 @@ const LivestreamPlayer = () => {
   const heartbeatTimer      = useRef(null);
   const joiningRef          = useRef(false);
   const playerContainerRef  = useRef(null);
+  const hideTimerRef        = useRef(null);
 
   // ─── Fullscreen toggle ──────────────────────
   const toggleFullscreen = useCallback(async () => {
@@ -353,12 +355,21 @@ const LivestreamPlayer = () => {
                   {/* Player container — THIS is what goes fullscreen (not the iframe) */}
                   <div
                     ref={playerContainerRef}
+                    onMouseMove={() => {
+                      setShowControls(true);
+                      clearTimeout(hideTimerRef.current);
+                      hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+                    }}
+                    onMouseLeave={() => {
+                      hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
+                    }}
                     style={{
                       position: "relative",
                       width: "100%",
                       paddingBottom: isFullscreen ? "0" : "56.25%",
                       height: isFullscreen ? "100vh" : undefined,
                       background: "#000",
+                      cursor: showControls ? "default" : "none",
                     }}
                   >
                     {hlsUrl ? (
@@ -407,7 +418,9 @@ const LivestreamPlayer = () => {
                         color: "#fff",
                         cursor: "pointer",
                         backdropFilter: "blur(8px)",
-                        transition: "all 0.2s ease",
+                        transition: "all 0.3s ease",
+                        opacity: showControls ? 1 : 0,
+                        pointerEvents: showControls ? "auto" : "none",
                       }}
                       onMouseEnter={(e) => {
                         e.currentTarget.style.background = "rgba(255,255,255,0.15)";
