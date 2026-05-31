@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
 import homeBg from "../assets/home-bg.png";
@@ -17,12 +17,52 @@ const LivestreamPlayer = () => {
   const [error, setError]               = useState("");
   const [errorCode, setErrorCode]       = useState(""); // NO_SUBSCRIPTION | SCREEN_LIMIT_REACHED | PRODUCT_REQUIRED
   const [requiredProduct, setRequiredProduct] = useState(null); // { _id, name, slug }
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
-  const videoRef       = useRef(null);
-  const hlsRef         = useRef(null);
-  const sessionRef     = useRef(null);
-  const heartbeatTimer = useRef(null);
-  const joiningRef     = useRef(false);
+  const videoRef            = useRef(null);
+  const hlsRef              = useRef(null);
+  const sessionRef          = useRef(null);
+  const heartbeatTimer      = useRef(null);
+  const joiningRef          = useRef(false);
+  const playerContainerRef  = useRef(null);
+
+  // ─── Fullscreen toggle ──────────────────────
+  const toggleFullscreen = useCallback(async () => {
+    const container = playerContainerRef.current;
+    if (!container) return;
+
+    try {
+      if (!document.fullscreenElement) {
+        await container.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Fullscreen not supported or denied
+    }
+  }, []);
+
+  // ─── Listen for fullscreen changes ──────────
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
+  }, []);
+
+  // ─── ESC key to exit fullscreen ─────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape" && isFullscreen) {
+        document.exitFullscreen?.().catch(() => {});
+      }
+    };
+    if (isFullscreen) {
+      window.addEventListener("keydown", handleKeyDown);
+      return () => window.removeEventListener("keydown", handleKeyDown);
+    }
+  }, [isFullscreen]);
 
   // ─── Load stream + join ──────────────────────
   useEffect(() => {
@@ -289,24 +329,35 @@ const LivestreamPlayer = () => {
               {/* CASE 7: Playing */}
               {isPlaying && (
                 <div className="mb-8 overflow-hidden border bg-black/60 border-white/10 rounded-2xl backdrop-blur-md">
-                  {/* Top bar */}
-                  <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-4 border-b border-white/5">
-                    <div className="flex items-center gap-3">
-                      <span className="bg-red-600 text-white text-[10px] px-3 py-1 uppercase tracking-widest rounded-full font-bold flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                        LIVE
-                      </span>
-                      <h2 className="text-sm font-semibold tracking-widest uppercase font-f1 text-white/80">
-                        {stream?.name}
-                      </h2>
+                  {/* Top bar — hidden in fullscreen */}
+                  {!isFullscreen && (
+                    <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-4 border-b border-white/5">
+                      <div className="flex items-center gap-3">
+                        <span className="bg-red-600 text-white text-[10px] px-3 py-1 uppercase tracking-widest rounded-full font-bold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                          LIVE
+                        </span>
+                        <h2 className="text-sm font-semibold tracking-widest uppercase font-f1 text-white/80">
+                          {stream?.name}
+                        </h2>
+                      </div>
+                      {stream?.viewers > 0 && (
+                        <span className="text-xs text-white/30">{stream.viewers} watching</span>
+                      )}
                     </div>
-                    {stream?.viewers > 0 && (
-                      <span className="text-xs text-white/30">{stream.viewers} watching</span>
-                    )}
-                  </div>
+                  )}
 
-                  {/* Player */}
-                  <div style={{ position: "relative", width: "100%", paddingBottom: "56.25%", background: "#000" }}>
+                  {/* Player container — THIS is what goes fullscreen (not the iframe) */}
+                  <div
+                    ref={playerContainerRef}
+                    style={{
+                      position: "relative",
+                      width: "100%",
+                      paddingBottom: isFullscreen ? "0" : "56.25%",
+                      height: isFullscreen ? "100vh" : undefined,
+                      background: "#000",
+                    }}
+                  >
                     {hlsUrl ? (
                       <video
                         ref={videoRef}
@@ -318,7 +369,8 @@ const LivestreamPlayer = () => {
                     ) : stream?.embedUrl ? (
                       <iframe
                         src={stream.embedUrl}
-                        allowFullScreen
+                        /* No allowFullScreen — prevents the iframe from going fullscreen
+                           on its own, which would reveal the embed source domain. */
                         allow="encrypted-media; picture-in-picture; autoplay"
                         frameBorder="0"
                         scrolling="no"
@@ -332,6 +384,56 @@ const LivestreamPlayer = () => {
                         No playback URL configured — set one in the admin panel.
                       </div>
                     )}
+
+                    {/* Custom fullscreen toggle button */}
+                    <button
+                      onClick={toggleFullscreen}
+                      title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                      style={{
+                        position: "absolute",
+                        bottom: isFullscreen ? "20px" : "12px",
+                        right: isFullscreen ? "20px" : "12px",
+                        zIndex: 50,
+                        width: "40px",
+                        height: "40px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        background: "rgba(0,0,0,0.7)",
+                        border: "1px solid rgba(255,255,255,0.15)",
+                        borderRadius: "8px",
+                        color: "#fff",
+                        cursor: "pointer",
+                        backdropFilter: "blur(8px)",
+                        transition: "all 0.2s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.15)";
+                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "rgba(0,0,0,0.7)";
+                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
+                      }}
+                    >
+                      {isFullscreen ? (
+                        /* Exit fullscreen icon (compress) */
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="4 14 10 14 10 20" />
+                          <polyline points="20 10 14 10 14 4" />
+                          <line x1="14" y1="10" x2="21" y2="3" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      ) : (
+                        /* Enter fullscreen icon (expand) */
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="15 3 21 3 21 9" />
+                          <polyline points="9 21 3 21 3 15" />
+                          <line x1="21" y1="3" x2="14" y2="10" />
+                          <line x1="3" y1="21" x2="10" y2="14" />
+                        </svg>
+                      )}
+                    </button>
                   </div>
                 </div>
               )}
