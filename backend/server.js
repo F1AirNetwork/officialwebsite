@@ -19,6 +19,7 @@ import eventRoutes      from "./routes/eventRoutes.js";
 import livestreamRoutes from "./routes/livestreamRoutes.js";
 import orderRoutes      from "./routes/orderRoutes.js";
 import screenRoutes     from "./routes/screenRoutes.js";
+import featuredRoutes   from "./routes/featuredRoutes.js";
 
 const app  = express();
 const PORT = process.env.PORT || 5000;
@@ -181,6 +182,7 @@ app.use("/api/events",        eventRoutes);
 app.use("/api/livestream",    livestreamRoutes);
 app.use("/api/orders",        orderRoutes);
 app.use("/api/admin/screens", screenRoutes);
+app.use("/api/featured",      featuredRoutes);
 
 // ─── 404 ──────────────────────────────────────
 app.use((req, res) => {

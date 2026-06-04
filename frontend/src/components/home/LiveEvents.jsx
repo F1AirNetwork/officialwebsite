@@ -1,48 +1,7 @@
 import { Link } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
-import { eventApi, streamApi } from "../../api/api.js";
+import { useEffect, useState } from "react";
+import { eventApi, streamApi, featuredApi } from "../../api/api.js";
 import { useAuth } from "../../context/AuthContext.jsx";
-
-// ─── Tiny HLS preview player (no controls, muted, autoplay) ──────────────────
-const HlsPreview = ({ url }) => {
-  const videoRef = useRef(null);
-
-  useEffect(() => {
-    if (!url || !videoRef.current) return;
-    let hls;
-
-    const load = async () => {
-      // Dynamically import hls.js so it doesn't break if not installed
-      try {
-        const { default: Hls } = await import("hls.js");
-        if (Hls.isSupported()) {
-          hls = new Hls({ autoStartLoad: true, maxBufferLength: 10 });
-          hls.loadSource(url);
-          hls.attachMedia(videoRef.current);
-          hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            videoRef.current?.play().catch(() => {});
-          });
-        } else if (videoRef.current.canPlayType("application/vnd.apple.mpegurl")) {
-          videoRef.current.src = url;
-          videoRef.current.play().catch(() => {});
-        }
-      } catch (_) {}
-    };
-
-    load();
-    return () => hls?.destroy();
-  }, [url]);
-
-  return (
-    <video
-      ref={videoRef}
-      muted
-      playsInline
-      autoPlay
-      className="object-cover w-full h-full"
-    />
-  );
-};
 
 // ─── Skeleton loader ──────────────────────────────────────────────────────────
 const Skeleton = ({ className }) => (
@@ -50,35 +9,36 @@ const Skeleton = ({ className }) => (
 );
 
 export default function LiveEvents() {
-  const { user, token } = useAuth();
+  const { token } = useAuth();
 
-  const [stream, setStream]   = useState(null);   // featured stream to display
-  const [events, setEvents]   = useState([]);      // upcoming events list
-  const [loading, setLoading] = useState(true);
-
-  // Does the user have an active subscription?
-  const hasSubscription = user?.subscription?.status === "active";
-  const isLoggedIn      = !!user;
+  const [featured, setFeatured] = useState(null);  // admin-configured featured data
+  const [anyLive, setAnyLive]   = useState(false);  // is any stream currently live?
+  const [events, setEvents]     = useState([]);      // upcoming events list
+  const [loading, setLoading]   = useState(true);
 
   useEffect(() => {
     const fetchAll = async () => {
+      // Fetch featured config (public, no auth needed)
       try {
-        // Fetch stream config (optionalAuth — returns hlsUrl only if authenticated)
-        const streamRes = await streamApi.getAll(token || null);
-        const list = Array.isArray(streamRes.data) ? streamRes.data : [streamRes.data];
-
-        // Prefer the first LIVE stream; fall back to the first stream overall
-        const liveStream = list.find((s) => s?.isLive);
-        setStream(liveStream || list[0] || null);
+        const res = await featuredApi.get();
+        setFeatured(res.data || null);
       } catch (_) {
-        setStream(null);
+        setFeatured(null);
       }
 
+      // Check if any stream is live (for the LIVE badge)
       try {
-        // Fetch upcoming + live events (up to 5 in the sidebar)
+        const streamRes = await streamApi.getAll(token || null);
+        const list = Array.isArray(streamRes.data) ? streamRes.data : [streamRes.data];
+        setAnyLive(list.some((s) => s?.isLive));
+      } catch (_) {
+        setAnyLive(false);
+      }
+
+      // Fetch upcoming events
+      try {
         const evRes = await eventApi.getAll();
         const all   = evRes.data?.events || [];
-        // Show live events first, then upcoming, exclude completed
         const shown = all
           .filter((e) => e.status !== "completed")
           .sort((a, b) => {
@@ -98,23 +58,14 @@ export default function LiveEvents() {
     fetchAll();
   }, [token]);
 
-  const isLive = stream?.isLive === true;
-
-  // Does the user have access to this stream?
-  // Either: active subscription, OR purchased the stream's required product
-  const hasProductAccess = (() => {
-    if (hasSubscription) return true;
-    if (!stream?.requiredProductId) return false;
-    const reqId = (stream.requiredProductId?._id || stream.requiredProductId)?.toString();
-    if (!reqId || !user?.purchasedProducts) return false;
-    return user.purchasedProducts.some(
-      (p) => p.status === "active" && p.productId?.toString() === reqId
-    );
-  })();
-
-  // Should we show the actual stream preview?
-  // Only if: stream is live AND user has access AND stream has an HLS url
-  const canPreview = isLive && hasProductAccess && stream?.hlsUrl;
+  // Derive display values from featured config
+  const isActive    = featured?.isActive !== false;
+  const title       = featured?.title || "F1 Air Network";
+  const subtitle    = featured?.subtitle || "Live race coverage with multi-angle views, real-time telemetry, and pit lane insights.";
+  const thumbnail   = featured?.thumbnail || "";
+  const showButton  = featured?.showButton !== false;
+  const buttonText  = featured?.buttonText || "Join Live Stream";
+  const buttonLink  = featured?.buttonLink || "/livestream";
 
   return (
     <section className="relative z-20 py-28">
@@ -131,65 +82,27 @@ export default function LiveEvents() {
         {/* Main layout */}
         <div className="grid grid-cols-1 gap-12 lg:grid-cols-3">
 
-          {/* ── LEFT: Featured stream player ──────────────────────────── */}
+          {/* ── LEFT: Featured stream thumbnail ──────────────────────── */}
           <div className="border lg:col-span-2 border-white/15 bg-black/60 backdrop-blur-md">
 
-            {/* Video area */}
+            {/* Thumbnail area */}
             <div className="relative flex items-center justify-center overflow-hidden bg-black aspect-video">
 
               {loading ? (
                 <Skeleton className="absolute inset-0 rounded-none" />
-              ) : canPreview ? (
-                /* ── Live preview for subscribers ── */
+              ) : thumbnail ? (
+                /* ── Thumbnail image ── */
                 <>
-                  <HlsPreview url={stream.hlsUrl} />
-                  {/* LIVE badge */}
-                  <span className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 z-10">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                    LIVE NOW
-                  </span>
-                  {/* Muted notice */}
-                  <span className="absolute bottom-4 right-4 text-[10px] text-white/40 bg-black/60 px-2 py-0.5 rounded z-10">
-                    Preview · Muted
-                  </span>
+                  <img
+                    src={thumbnail}
+                    alt={title}
+                    className="object-cover w-full h-full"
+                  />
+                  {/* Gradient overlay for readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
                 </>
-
-              ) : isLive && !hasProductAccess ? (
-                /* ── Live but locked (no subscription) ── */
-                <>
-                  {/* Blurred static background */}
-                  <div className="absolute inset-0 bg-gradient-to-br from-red-900/20 to-black" />
-                  <span className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                    LIVE NOW
-                  </span>
-                  {/* Lock overlay */}
-                  <div className="relative z-10 px-6 text-center">
-                    <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 border-2 rounded-full border-white/20 bg-white/5">
-                      <svg className="w-7 h-7 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                          d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    </div>
-                    <p className="mb-1 text-sm tracking-widest text-white uppercase font-f1">
-                      Subscription Required
-                    </p>
-                    <p className="mb-5 text-xs text-white/50">
-                      {isLoggedIn
-                        ? "Upgrade your plan to watch live streams"
-                        : "Sign in and subscribe to watch live streams"}
-                    </p>
-                    <Link
-                      to={isLoggedIn ? "/store" : "/login"}
-                      className="font-f1 text-xs uppercase tracking-widest border border-white px-5 py-2.5 hover:bg-gray-500 hover:text-black transition"
-                    >
-                      {isLoggedIn ? "Get Subscription" : "Sign In"}
-                    </Link>
-                  </div>
-                </>
-
               ) : (
-                /* ── Stream offline ── */
+                /* ── No thumbnail placeholder ── */
                 <div className="px-6 text-center">
                   <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 border rounded-full border-white/10 bg-white/5">
                     <svg className="w-7 h-7 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -205,6 +118,14 @@ export default function LiveEvents() {
                   </p>
                 </div>
               )}
+
+              {/* LIVE badge — shown when any stream is actually live */}
+              {!loading && anyLive && (
+                <span className="absolute top-4 left-4 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full flex items-center gap-1.5 z-10">
+                  <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                  LIVE NOW
+                </span>
+              )}
             </div>
 
             {/* Stream info */}
@@ -218,19 +139,19 @@ export default function LiveEvents() {
               ) : (
                 <>
                   <h3 className="mb-2 text-lg uppercase font-f1">
-                    {stream?.name || "F1 Air Network"}
+                    {title}
                   </h3>
                   <p className="mb-6 text-sm text-white/70">
-                    {stream?.description || "Live race coverage with multi-angle views, real-time telemetry, and pit lane insights."}
+                    {subtitle}
                   </p>
 
-                  {/* Join button — only shown when stream is live */}
-                  {isLive && (
+                  {/* CTA button */}
+                  {showButton && (
                     <Link
-                      to="/livestream"
+                      to={buttonLink}
                       className="inline-block px-6 py-3 tracking-widest text-white uppercase transition bg-gray-700 rounded-md font-f1 md:px-8 md:py-4 hover:bg-gray-500 hover:text-black"
                     >
-                      {hasProductAccess ? "Join Live Stream" : "View Stream"}
+                      {buttonText}
                     </Link>
                   )}
                 </>

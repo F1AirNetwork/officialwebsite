@@ -86,3 +86,8 @@ export const userApi = {
   getSubscription: (token)       => get("/users/subscription",  token),
   getScreens:      (token)       => get("/users/screens",       token),
 };
+
+// ─── Featured (Homepage) ─────────────────────
+export const featuredApi = {
+  get: () => get("/featured"),
+};

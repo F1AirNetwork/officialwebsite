@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar.jsx";
 import Spinner from "./components/ui/Spinner.jsx";
 import Login from "./pages/Login.jsx";
 import Dashboard from "./pages/Dashboard.jsx";
+import Homepage from "./pages/Homepage.jsx";
 import Stream from "./pages/Stream.jsx";
 import Products from "./pages/Products.jsx";
 import Categories from "./pages/Categories.jsx";
@@ -55,6 +56,7 @@ export default function App() {
           {/* Protected admin layout */}
           <Route element={<AdminLayout />}>
             <Route path="/"           element={<Dashboard />} />
+            <Route path="/homepage"   element={<Homepage />} />
             <Route path="/stream"     element={<Stream />} />
             <Route path="/products"   element={<Products />} />
             <Route path="/categories" element={<Categories />} />

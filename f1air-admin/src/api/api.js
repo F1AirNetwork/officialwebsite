@@ -150,3 +150,15 @@ export const userApi = {
   gift:               (id, body, token)    => post(`/users/admin/${id}/gift`, body, token),
   updateCurrency:     (id, body, token)    => patch(`/users/admin/${id}/currency`, body, token),
 };
+
+// ─── Featured (Homepage) ─────────────────────
+export const featuredApi = {
+  get:              (token)            => get("/featured", token),
+  update:           (body, token)      => put("/featured", body, token),
+  uploadThumbnail:  (file, token) => {
+    const fd = new FormData();
+    fd.append("image", file);
+    return upload("PATCH", "/featured/thumbnail", fd, token);
+  },
+  deleteThumbnail:  (token)            => del("/featured/thumbnail", token),
+};

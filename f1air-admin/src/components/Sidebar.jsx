@@ -1,12 +1,13 @@
 import { NavLink, useNavigate } from "react-router-dom";
 import {
-  LayoutDashboard, Radio, Package, ShoppingCart,
+  LayoutDashboard, Home, Radio, Package, ShoppingCart,
   Calendar, Users, LogOut, ChevronRight, Tag,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext.jsx";
 
 const navItems = [
   { to: "/",            label: "Dashboard",  icon: LayoutDashboard },
+  { to: "/homepage",    label: "Homepage",   icon: Home            },
   { to: "/stream",      label: "Stream",     icon: Radio           },
   { to: "/products",    label: "Products",   icon: Package         },
   { to: "/categories",  label: "Categories", icon: Tag             },
