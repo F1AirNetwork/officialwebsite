@@ -52,7 +52,7 @@ const Skeleton = ({ className }) => (
 export default function LiveEvents() {
   const { user, token } = useAuth();
 
-  const [stream, setStream]   = useState(null);   // current stream config
+  const [stream, setStream]   = useState(null);   // featured stream to display
   const [events, setEvents]   = useState([]);      // upcoming events list
   const [loading, setLoading] = useState(true);
 
@@ -66,7 +66,10 @@ export default function LiveEvents() {
         // Fetch stream config (optionalAuth — returns hlsUrl only if authenticated)
         const streamRes = await streamApi.getAll(token || null);
         const list = Array.isArray(streamRes.data) ? streamRes.data : [streamRes.data];
-        setStream(list[0] || null);
+
+        // Prefer the first LIVE stream; fall back to the first stream overall
+        const liveStream = list.find((s) => s?.isLive);
+        setStream(liveStream || list[0] || null);
       } catch (_) {
         setStream(null);
       }
@@ -97,9 +100,21 @@ export default function LiveEvents() {
 
   const isLive = stream?.isLive === true;
 
+  // Does the user have access to this stream?
+  // Either: active subscription, OR purchased the stream's required product
+  const hasProductAccess = (() => {
+    if (hasSubscription) return true;
+    if (!stream?.requiredProductId) return false;
+    const reqId = (stream.requiredProductId?._id || stream.requiredProductId)?.toString();
+    if (!reqId || !user?.purchasedProducts) return false;
+    return user.purchasedProducts.some(
+      (p) => p.status === "active" && p.productId?.toString() === reqId
+    );
+  })();
+
   // Should we show the actual stream preview?
-  // Only if: stream is live AND user has a subscription AND stream has an HLS url
-  const canPreview = isLive && hasSubscription && stream?.hlsUrl;
+  // Only if: stream is live AND user has access AND stream has an HLS url
+  const canPreview = isLive && hasProductAccess && stream?.hlsUrl;
 
   return (
     <section className="relative z-20 py-28">
@@ -139,7 +154,7 @@ export default function LiveEvents() {
                   </span>
                 </>
 
-              ) : isLive && !hasSubscription ? (
+              ) : isLive && !hasProductAccess ? (
                 /* ── Live but locked (no subscription) ── */
                 <>
                   {/* Blurred static background */}
@@ -215,7 +230,7 @@ export default function LiveEvents() {
                       to="/livestream"
                       className="inline-block px-6 py-3 tracking-widest text-white uppercase transition bg-gray-700 rounded-md font-f1 md:px-8 md:py-4 hover:bg-gray-500 hover:text-black"
                     >
-                      {hasSubscription ? "Join Live Stream" : "View Stream"}
+                      {hasProductAccess ? "Join Live Stream" : "View Stream"}
                     </Link>
                   )}
                 </>
