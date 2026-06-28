@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import Hls from "hls.js";
 import homeBg from "../assets/home-bg.png";
@@ -17,57 +17,12 @@ const LivestreamPlayer = () => {
   const [error, setError]               = useState("");
   const [errorCode, setErrorCode]       = useState(""); // NO_SUBSCRIPTION | SCREEN_LIMIT_REACHED | PRODUCT_REQUIRED
   const [requiredProduct, setRequiredProduct] = useState(null); // { _id, name, slug }
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const [showControls, setShowControls] = useState(true);
 
-  const videoRef            = useRef(null);
-  const hlsRef              = useRef(null);
-  const sessionRef          = useRef(null);
-  const heartbeatTimer      = useRef(null);
-  const joiningRef          = useRef(false);
-  const playerContainerRef  = useRef(null);
-  const hideTimerRef        = useRef(null);
-
-  // ─── Fullscreen toggle ──────────────────────
-  const toggleFullscreen = useCallback(async () => {
-    const container = playerContainerRef.current;
-    if (!container) return;
-
-    try {
-      if (!document.fullscreenElement) {
-        await container.requestFullscreen();
-      } else {
-        await document.exitFullscreen();
-      }
-    } catch {
-      // Fullscreen not supported or denied
-    }
-  }, []);
-
-  // ─── Listen for fullscreen changes ──────────
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => document.removeEventListener("fullscreenchange", handleFullscreenChange);
-  }, []);
-
-  // ─── Keyboard shortcuts: F = toggle, Escape = exit ──
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      // Ignore if user is typing in an input or textarea
-      const tag = document.activeElement?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement?.isContentEditable) return;
-
-      if (e.key === "f" || e.key === "F") {
-        e.preventDefault();
-        toggleFullscreen();
-      }
-    };
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggleFullscreen]);
+  const videoRef       = useRef(null);
+  const hlsRef         = useRef(null);
+  const sessionRef     = useRef(null);
+  const heartbeatTimer = useRef(null);
+  const joiningRef     = useRef(false);
 
   // ─── Load stream + join ──────────────────────
   useEffect(() => {
@@ -334,44 +289,24 @@ const LivestreamPlayer = () => {
               {/* CASE 7: Playing */}
               {isPlaying && (
                 <div className="mb-8 overflow-hidden border bg-black/60 border-white/10 rounded-2xl backdrop-blur-md">
-                  {/* Top bar — hidden in fullscreen */}
-                  {!isFullscreen && (
-                    <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-4 border-b border-white/5">
-                      <div className="flex items-center gap-3">
-                        <span className="bg-red-600 text-white text-[10px] px-3 py-1 uppercase tracking-widest rounded-full font-bold flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                          LIVE
-                        </span>
-                        <h2 className="text-sm font-semibold tracking-widest uppercase font-f1 text-white/80">
-                          {stream?.name}
-                        </h2>
-                      </div>
-                      {stream?.viewers > 0 && (
-                        <span className="text-xs text-white/30">{stream.viewers} watching</span>
-                      )}
+                  {/* Top bar */}
+                  <div className="flex items-center justify-between gap-3 px-6 pt-5 pb-4 border-b border-white/5">
+                    <div className="flex items-center gap-3">
+                      <span className="bg-red-600 text-white text-[10px] px-3 py-1 uppercase tracking-widest rounded-full font-bold flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
+                        LIVE
+                      </span>
+                      <h2 className="text-sm font-semibold tracking-widest uppercase font-f1 text-white/80">
+                        {stream?.name}
+                      </h2>
                     </div>
-                  )}
+                    {stream?.viewers > 0 && (
+                      <span className="text-xs text-white/30">{stream.viewers} watching</span>
+                    )}
+                  </div>
 
-                  {/* Player container — THIS is what goes fullscreen (not the iframe) */}
-                  <div
-                    ref={playerContainerRef}
-                    onMouseMove={() => {
-                      setShowControls(true);
-                      clearTimeout(hideTimerRef.current);
-                      hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
-                    }}
-                    onMouseLeave={() => {
-                      hideTimerRef.current = setTimeout(() => setShowControls(false), 3000);
-                    }}
-                    style={{
-                      position: "relative",
-                      width: "100%",
-                      paddingBottom: isFullscreen ? "0" : "56.25%",
-                      height: isFullscreen ? "100vh" : undefined,
-                      background: "#000",
-                      cursor: showControls ? "default" : "none",
-                    }}
-                  >
+                  {/* Player */}
+                  <div style={{ position: "relative", width: "100%", paddingBottom: "56.25%", background: "#000" }}>
                     {hlsUrl ? (
                       <video
                         ref={videoRef}
@@ -383,8 +318,7 @@ const LivestreamPlayer = () => {
                     ) : stream?.embedUrl ? (
                       <iframe
                         src={stream.embedUrl}
-                        /* No allowFullScreen — prevents the iframe from going fullscreen
-                           on its own, which would reveal the embed source domain. */
+                        allowFullScreen
                         allow="encrypted-media; picture-in-picture; autoplay"
                         frameBorder="0"
                         scrolling="no"
@@ -398,66 +332,6 @@ const LivestreamPlayer = () => {
                         No playback URL configured — set one in the admin panel.
                       </div>
                     )}
-
-                    {/* Custom fullscreen toggle button */}
-                    <button
-                      onClick={toggleFullscreen}
-                      title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen (F)"}
-                      style={{
-                        position: "absolute",
-                        bottom: isFullscreen ? "20px" : "12px",
-                        right: isFullscreen ? "20px" : "12px",
-                        zIndex: 50,
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "6px",
-                        padding: "8px 12px",
-                        background: "rgba(0,0,0,0.75)",
-                        border: "1px solid rgba(255,255,255,0.15)",
-                        borderRadius: "8px",
-                        color: "#fff",
-                        cursor: "pointer",
-                        backdropFilter: "blur(8px)",
-                        transition: "all 0.3s ease",
-                        opacity: showControls ? 1 : 0,
-                        pointerEvents: showControls ? "auto" : "none",
-                      }}
-                      onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.15)";
-                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.3)";
-                      }}
-                      onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "rgba(0,0,0,0.75)";
-                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.15)";
-                      }}
-                    >
-                      {isFullscreen ? (
-                        /* Minimize / exit-fullscreen icon (4 inward corners) */
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-                          <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-                          <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-                          <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-                        </svg>
-                      ) : (
-                        /* Fullscreen icon (4 outward corners) */
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M8 3H5a2 2 0 0 0-2 2v3" />
-                          <path d="M21 8V5a2 2 0 0 0-2-2h-3" />
-                          <path d="M3 16v3a2 2 0 0 0 2 2h3" />
-                          <path d="M16 21h3a2 2 0 0 0 2-2v-3" />
-                        </svg>
-                      )}
-                      <span style={{
-                        fontSize: "10px",
-                        fontWeight: 700,
-                        background: "rgba(255,255,255,0.12)",
-                        padding: "2px 5px",
-                        borderRadius: "4px",
-                        letterSpacing: "0.5px",
-                        lineHeight: 1,
-                      }}>F</span>
-                    </button>
                   </div>
                 </div>
               )}
